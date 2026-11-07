@@ -1,0 +1,71 @@
+# Local stack: PostgreSQL + Redis + the app (API + web UI on http://localhost:8080;
+# set APP_PORT / PG_PORT / REDIS_PORT if those ports are taken).
+#   docker compose up --build
+#   docker compose run --rm migrate python migrate.py --status
+#   docker compose exec api python auth_cli.py set-role you@example.com admin
+# Secrets here are for local use only.
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql://booking:booking@postgres:5432/booking
+  REDIS_URL: redis://redis:6379/0
+  MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:-ZmRldi1vbmx5LWtleS1kby1ub3QtdXNlLWluLXByb2Q=}
+  COOKIE_SECURE: "false"
+  FLIGHT_PROVIDER: ${FLIGHT_PROVIDER:-mock}
+  HOTEL_PROVIDER: ${HOTEL_PROVIDER:-mock}
+  CAR_PROVIDER: ${CAR_PROVIDER:-mock}
+  TRAIN_PROVIDER: ${TRAIN_PROVIDER:-mock}
+  DUFFEL_ACCESS_TOKEN: ${DUFFEL_ACCESS_TOKEN:-}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: booking
+      POSTGRES_PASSWORD: booking
+      POSTGRES_DB: booking
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${PG_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U booking -d booking"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build: .
+    image: booking-assistant:local
+    command: ["python", "migrate.py"]
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: booking-assistant:local
+    environment:
+      <<: *app-env
+      FORWARDED_ALLOW_IPS: "*"
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:

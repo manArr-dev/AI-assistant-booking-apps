@@ -1,0 +1,27 @@
+# Base: the app only. Overlays add the namespace, image (name + tag), hostnames, sizing
+# and (dev only) in-cluster PostgreSQL/Redis. Render with:  kubectl kustomize k8s/overlays/<env>
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: booking-assistant
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false
+
+resources:
+  - serviceaccount.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - hpa.yaml
+  - pdb.yaml
+  - cronjob-purge-offers.yaml
+  - networkpolicy.yaml
+
+configMapGenerator:
+  - name: booking-config
+    envs: [config.env]
+
+# The container image is referenced as plain "booking-assistant"; each overlay maps it
+# to a registry + tag with an `images:` entry (CD sets the tag per deploy).

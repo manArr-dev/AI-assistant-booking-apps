@@ -1,0 +1,28 @@
+[project]
+name = "booking-assistant"
+version = "0.1.0"
+description = "AI booking assistant: appointments and travel (flights, hotels, cars, trains)"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["frontend"]
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, bugbear, import order, pyupgrade, security (bandit)
+select = ["E", "W", "F", "B", "I", "UP", "S"]
+ignore = [
+    "S101",   # assert is how the test scripts check results
+    "S311",   # random is only used for mock inventory, never for secrets
+    "S608",   # SQL is built from constants; all values are bound parameters
+    "B008",   # FastAPI's Depends() in defaults is the intended pattern
+    "E402",   # load_dotenv()/test isolation must run before some imports
+]
+
+[tool.ruff.lint.per-file-ignores]
+"test_*.py" = ["S105", "S106"]   # fixed test passwords
+"database.py" = ["S608"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["auth", "cache", "database", "db", "mcp_auth", "signin", "travel", "test_helpers", "api_server"]

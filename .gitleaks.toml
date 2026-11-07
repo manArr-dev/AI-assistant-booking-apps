@@ -1,0 +1,12 @@
+# Secret scanning (pre-commit). Everything is scanned with the default rules, except the
+# deliberately public, dev-only placeholder credentials used by docker compose and the
+# k8s dev overlay. Real secrets belong in GitHub environment secrets, never in git.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Dev-only placeholder credentials"
+paths = [
+  '''docker-compose\.yml''',
+  '''k8s/overlays/dev/kustomization\.yaml''',
+]

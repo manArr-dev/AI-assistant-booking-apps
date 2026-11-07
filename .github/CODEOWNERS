@@ -1,0 +1,7 @@
+# Reviews are requested from these owners automatically; with branch protection
+# "Require review from Code Owners", they must approve changes to these paths.
+*                       @manArr-dev
+/.github/               @manArr-dev
+/k8s/                   @manArr-dev
+/auth.py                @manArr-dev
+/database.py            @manArr-dev

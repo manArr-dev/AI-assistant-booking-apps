@@ -1,0 +1,35 @@
+# Staging: deployed automatically by CD on every push to main.
+# Needs the "booking-secrets" Secret (CD creates it from GitHub environment secrets).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: booking-staging
+
+resources:
+  - namespace.yaml
+  - ../../base
+
+images:
+  - name: booking-assistant
+    newName: ghcr.io/manarr-dev/booking-assistant
+    newTag: main   # CD replaces this with the exact commit tag (sha-xxxxxxx)
+
+configMapGenerator:
+  - name: booking-config
+    behavior: merge
+    literals:
+      - LOG_LEVEL=DEBUG
+      - FLIGHT_PROVIDER=mock
+      - HOTEL_PROVIDER=mock
+
+patches:
+  - target: { kind: Ingress, name: booking-api }
+    patch: |-
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: staging.booking.example.com
+      - op: replace
+        path: /spec/rules/0/host
+        value: staging.booking.example.com
+      - op: replace
+        path: /metadata/annotations/cert-manager.io~1cluster-issuer
+        value: letsencrypt-staging

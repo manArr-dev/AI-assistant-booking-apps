@@ -1,0 +1,54 @@
+# Production: deployed by CD when a release tag (vX.Y.Z) is pushed, after approval
+# on the GitHub "production" environment. Needs the "booking-secrets" Secret.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: booking-prod
+
+resources:
+  - namespace.yaml
+  - ../../base
+
+images:
+  - name: booking-assistant
+    newName: ghcr.io/manarr-dev/booking-assistant
+    newTag: v0.0.0   # CD replaces this with the release tag
+
+configMapGenerator:
+  - name: booking-config
+    behavior: merge
+    literals:
+      - WEB_CONCURRENCY=3
+      - DB_POOL_MAX=15
+
+patches:
+  - target: { kind: Deployment, name: booking-api }
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests: { cpu: 250m, memory: 256Mi }
+          limits: { memory: 768Mi }
+  - target: { kind: HorizontalPodAutoscaler, name: booking-api }
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+      - op: replace
+        path: /spec/maxReplicas
+        value: 12
+  - target: { kind: PodDisruptionBudget, name: booking-api }
+    patch: |-
+      - op: replace
+        path: /spec/minAvailable
+        value: 2
+  - target: { kind: Ingress, name: booking-api }
+    patch: |-
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: booking.example.com
+      - op: replace
+        path: /spec/rules/0/host
+        value: booking.example.com

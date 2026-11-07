@@ -1,0 +1,27 @@
+# Assumes ingress-nginx and cert-manager (ClusterIssuer "letsencrypt"). Overlays set the host.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: booking-api
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    # ingress-nginx sends HSTS on TLS hosts by default; snippet annotations are avoided on purpose.
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [booking.example.com]
+      secretName: booking-tls
+  rules:
+    - host: booking.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: booking-api
+                port:
+                  name: http

@@ -1,0 +1,9 @@
+# Everything for local development: servers + the LangChain chat agent.
+-r requirements-server.txt
+
+langchain>=1.0
+langchain-anthropic
+langchain-mcp-adapters
+langgraph
+# optional: shows a scannable QR code in the terminal during MFA setup
+qrcode

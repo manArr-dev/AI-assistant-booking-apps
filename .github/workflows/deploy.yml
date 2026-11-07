@@ -1,0 +1,71 @@
+# Reusable deploy job (called by cd.yml). Uses the GitHub *environment* given, so its
+# protection rules (required reviewers for production) and secrets apply:
+#   KUBE_CONFIG          base64 kubeconfig for a deploy-only service account
+#   DATABASE_URL         postgresql://... (managed PostgreSQL)
+#   REDIS_URL            redis://... or rediss://... (managed Redis)
+#   MFA_ENCRYPTION_KEY   Fernet key; must stay the same across deploys
+#   DUFFEL_ACCESS_TOKEN  optional
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment: { required: true, type: string }
+      overlay: { required: true, type: string }
+      namespace: { required: true, type: string }
+      image: { required: true, type: string }
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 20
+    env:
+      NS: ${{ inputs.namespace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+      - uses: imranismail/setup-kustomize@v2
+
+      - name: Configure cluster access
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+          kubectl version
+
+      - name: Apply namespace and secrets
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          MFA_ENCRYPTION_KEY: ${{ secrets.MFA_ENCRYPTION_KEY }}
+          DUFFEL_ACCESS_TOKEN: ${{ secrets.DUFFEL_ACCESS_TOKEN }}
+        run: |
+          kubectl apply -f "${{ inputs.overlay }}/namespace.yaml"
+          kubectl -n "$NS" create secret generic booking-secrets \
+            --from-literal=DATABASE_URL="$DATABASE_URL" \
+            --from-literal=REDIS_URL="$REDIS_URL" \
+            --from-literal=MFA_ENCRYPTION_KEY="$MFA_ENCRYPTION_KEY" \
+            --from-literal=DUFFEL_ACCESS_TOKEN="$DUFFEL_ACCESS_TOKEN" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy ${{ inputs.image }}
+        working-directory: ${{ inputs.overlay }}
+        run: |
+          kustomize edit set image "booking-assistant=${{ inputs.image }}"
+          kustomize build . | kubectl apply -f -
+          kubectl -n "$NS" rollout status deployment/booking-api --timeout=300s
+
+      - name: Smoke test
+        run: |
+          kubectl -n "$NS" exec deploy/booking-api -c api -- python -c \
+            "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=5).read().decode())"
+
+      - name: Roll back on failure
+        if: failure()
+        run: |
+          kubectl -n "$NS" rollout undo deployment/booking-api || true
+          kubectl -n "$NS" rollout status deployment/booking-api --timeout=300s || true

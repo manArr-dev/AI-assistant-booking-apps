@@ -1,0 +1,69 @@
+# Local/dev cluster (kind, k3d, minikube, Docker Desktop): everything in one namespace,
+# including PostgreSQL and Redis, one API replica, plain HTTP on booking.localtest.me.
+#   docker build -t booking-assistant:dev .   (load it into your cluster)
+#   kubectl apply -k k8s/overlays/dev
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: booking-dev
+
+resources:
+  - namespace.yaml
+  - ../../base
+  - postgres.yaml
+  - redis.yaml
+
+images:
+  - name: booking-assistant
+    newName: booking-assistant
+    newTag: dev
+
+# Dev-only credentials, generated into a Secret. Staging/production never use this.
+secretGenerator:
+  - name: booking-secrets
+    literals:
+      - DATABASE_URL=postgresql://booking:booking-dev@postgres:5432/booking
+      - REDIS_URL=redis://redis:6379/0
+      - MFA_ENCRYPTION_KEY=ZmRldi1vbmx5LWtleS1kby1ub3QtdXNlLWluLXByb2Q=
+      - DUFFEL_ACCESS_TOKEN=
+  - name: postgres-credentials
+    literals:
+      - POSTGRES_USER=booking
+      - POSTGRES_PASSWORD=booking-dev
+      - POSTGRES_DB=booking
+
+configMapGenerator:
+  - name: booking-config
+    behavior: merge
+    literals:
+      - COOKIE_SECURE=false
+      - WEB_CONCURRENCY=1
+
+patches:
+  - target: { kind: Deployment, name: booking-api }
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+      - op: add
+        path: /spec/template/spec/initContainers/0/imagePullPolicy
+        value: IfNotPresent
+  - target: { kind: HorizontalPodAutoscaler, name: booking-api }
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 2
+  - target: { kind: Ingress, name: booking-api }
+    patch: |-
+      - op: remove
+        path: /spec/tls
+      - op: remove
+        path: /metadata/annotations
+      - op: replace
+        path: /spec/rules/0/host
+        value: booking.localtest.me

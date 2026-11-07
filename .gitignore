@@ -1,0 +1,11 @@
+.env
+.venv/
+__pycache__/
+*.db
+# Generated MFA encryption key (when MFA_ENCRYPTION_KEY is not set). Never commit it.
+.mfa.key
+node_modules/
+frontend/dist/
+.ruff_cache/
+.pytest_cache/
+*.tar

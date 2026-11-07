@@ -1,0 +1,128 @@
+# Continuous integration: runs on every pull request, and is called by CD before any deploy.
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "ruff>=0.6"
+      - name: Ruff (lint, import order, security rules)
+        run: ruff check --output-format=github .
+
+  test:
+    name: test (${{ matrix.db }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        db: [sqlite, postgres]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: booking_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      # Empty -> SQLite + in-memory cache; set -> PostgreSQL schema + Redis prefix per suite.
+      TEST_DATABASE_URL: ${{ matrix.db == 'postgres' && 'postgresql://postgres:test@localhost:5432/booking_test' || '' }}
+      TEST_REDIS_URL: ${{ matrix.db == 'postgres' && 'redis://localhost:6379/0' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - name: Run all test suites
+        run: python run_tests.py
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image (not pushed)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: booking-assistant:ci
+          build-args: |
+            VERSION=ci
+            GIT_SHA=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test the container
+        run: |
+          docker run -d --name app -p 8080:8080 \
+            -e MFA_ENCRYPTION_KEY="$(python3 -c 'import base64,os;print(base64.urlsafe_b64encode(os.urandom(32)).decode())')" \
+            booking-assistant:ci
+          for _ in $(seq 1 30); do curl -fsS localhost:8080/readyz && break; sleep 1; done
+          curl -fsS localhost:8080/readyz
+          curl -fsS localhost:8080/ | grep -q '<div id="root">'
+          docker logs app
+      - name: Scan image for vulnerabilities
+        # Pinned to a commit, not a tag: trivy-action tags were hijacked in a 2026 supply-chain
+        # attack. Dependabot proposes updates; verify the SHA belongs to an official release.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: booking-assistant:ci
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  kubernetes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render and validate manifests
+        run: |
+          mkdir -p rendered
+          for env in dev staging production; do
+            kubectl kustomize "k8s/overlays/$env" > "rendered/$env.yaml"
+          done
+          docker run --rm -v "$PWD/rendered:/m" ghcr.io/yannh/kubeconform:v0.6.7 \
+            -strict -summary -kubernetes-version 1.31.0 /m/dev.yaml /m/staging.yaml /m/production.yaml
