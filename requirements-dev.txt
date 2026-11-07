@@ -1,4 +1,4 @@
 # Tooling for tests, linting and git hooks (CI installs this too).
 -r requirements-server.txt
-ruff>=0.6
+ruff>=0.17.3
 pre-commit>=3.7
