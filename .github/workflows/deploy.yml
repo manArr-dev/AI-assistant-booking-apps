@@ -27,7 +27,7 @@ jobs:
       NS: ${{ inputs.namespace }}
     steps:
       - uses: actions/checkout@v4
-      - uses: azure/setup-kubectl@v4
+      - uses: azure/setup-kubectl@v5
       - uses: imranismail/setup-kustomize@v2
 
       - name: Configure cluster access
