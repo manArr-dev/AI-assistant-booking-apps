@@ -1,7 +1,7 @@
 # Runtime dependencies for the server image (REST API + MCP servers).
 # Ranges allow patch/minor updates; Dependabot proposes the rest.
 fastapi>=0.115,<1
-uvicorn[standard]>=0.30,<1
+uvicorn[standard]>=0.54.0,<1
 httpx>=0.27,<1
 pydantic>=2.7,<3
 cryptography>=43
