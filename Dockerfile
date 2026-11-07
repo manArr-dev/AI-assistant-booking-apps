@@ -4,7 +4,7 @@
 #   docker run -p 8080:8080 -e MFA_ENCRYPTION_KEY=... booking-assistant
 
 # ---------- 1. build the React frontend
-FROM node:22-alpine AS web
+FROM node:25-alpine AS web
 WORKDIR /web
 COPY frontend/package.json frontend/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
