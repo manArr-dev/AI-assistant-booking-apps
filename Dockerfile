@@ -12,7 +12,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # ---------- 2. install Python dependencies into a virtualenv
-FROM python:3.12-slim AS deps
+FROM python:3.15-slim AS deps
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1
 RUN python -m venv /opt/venv
 ENV PATH=/opt/venv/bin:$PATH
@@ -20,7 +20,7 @@ COPY requirements-server.txt ./
 RUN pip install -r requirements-server.txt
 
 # ---------- 3. runtime
-FROM python:3.12-slim AS runtime
+FROM python:3.15-slim AS runtime
 ARG VERSION=dev
 ARG GIT_SHA=unknown
 LABEL org.opencontainers.image.title="booking-assistant" \
